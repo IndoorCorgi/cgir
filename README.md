@@ -23,5 +23,9 @@ Raspberry Pi用 温度/湿度/気圧/赤外線 ホームIoT拡張ボード「[RP
 ## docoptモジュール
 `sudo pip3 install docopt`
 
+# 送信しても機器が反応しない場合
+一部環境で、pigpioのクロックソースがPCMの場合、意図した周波数にならず送信に失敗(機器が反応しない)する現象を確認しています。その場合は以下をお試しください。
 
+スーパーユーザーで /lib/systemd/system/pigpiod.service ファイルを開き、ExecStart行の最後に「-t 0」を追加します。編集後にRasbperry Piを再起動します。
 
+`ExecStart=/usr/bin/pigpio -l -t 0`
