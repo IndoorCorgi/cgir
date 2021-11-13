@@ -1,13 +1,12 @@
-#!/usr/bin/env python3
-
-# Raspberry Pi用赤外線送受信、データ解析ライブラリ
-# Indoor Corgi, https://www.indoorcorgielec.com
-# Version 2020/9/3
+"""
+Raspberry Pi用 赤外線送受信、データ解析モジュール
+Indoor Corgi, https://www.indoorcorgielec.com
+GitHub: https://github.com/IndoorCorgi/cgir
+"""
 
 import pigpio
 import time
 import json
-import os
 
 # 定数
 FORMAT_UNKNOWN = "Unknown"  # フォーマット不明
@@ -26,45 +25,53 @@ _T_NEC = 560  # NECフォーマットの基準周期[us]
 _T_SONY = 600  # SONYフォーマットの基準周期[us]
 _T_WAIT = 10000  # encode, decodeで使用するフレーム間の時間[us]
 
-# 赤外線の送受信とデータ解析用クラス
-#   共通のデータ型
-#     code
-#       赤外線データを時間で表したもの
-#       Mark (38kHzパルス送信), Space (待機)の時間をus単位で記録したリスト
-#       [Mark#1, Space#1, Mark#2, Space#2, ... ]
-#
-#     frames
-#       赤外線データをバイト列で表したもの. フレーム数とバイト数は可変.
-#       [
-#         [Byte#1, Byte#2, Byte#3, ... ] # Frame#1のバイト列
-#         [Byte#1, Byte#2, Byte#3, ... ] # Frame#2のバイト列
-#         ...
-#       ]
-#       SONYフォーマットの場合はバイト単位ではなく以下のbit数.
-#       [
-#         [7bitデータ, 13bitデータ] # Frame#1のデータ
-#         ...
-#       ]
-
 
 class Infrared:
+  """
+  赤外線の送受信とデータ解析用クラス
+  
+  共通のデータ型
+    code
+      赤外線データを時間で表したもの
+      Mark (38kHzパルス送信), Space (待機)の時間をus単位で記録したリスト
+      [Mark#1, Space#1, Mark#2, Space#2, ... ]
 
-  # 初期化
-  #   Parameters
-  #     gpio_send  : 赤外線LEDのGPIO番号
-  #     gpio_rec   : 赤外線受信機のGPIO番号
-  #     codes_path : 登録済みcode一覧を保存するファイル名
+    frames
+      赤外線データをバイト列で表したもの. フレーム数とバイト数は可変.
+      [
+        [Byte#1, Byte#2, Byte#3, ... ] # Frame#1のバイト列
+        [Byte#1, Byte#2, Byte#3, ... ] # Frame#2のバイト列
+        ...
+      ]
+      SONYフォーマットの場合はバイト単位ではなく以下のbit数.
+      [
+        [7bitデータ, 13bitデータ] # Frame#1のデータ
+        ...
+      ]
+  
+  Attributes:
+    gpio_send: 赤外線LEDのGPIO番号
+    gpio_rec: 赤外線受信機のGPIO番号
+    codes_path: 登録済みcode一覧を保存するファイル名
+    codes: 保存済codeを管理する辞書. コード名がKeyで赤外線データ(code形式)がValue
+  """
+
   def __init__(self, gpio_send=13, gpio_rec=4, codes_path='codes.json'):
     self.gpio_send = gpio_send
     self.gpio_rec = gpio_rec
     self.codes_path = codes_path
-    self.codes = {}  # 保存済codeを管理する辞書
+    self.codes = {}
 
-  # gpio_sendで指定したGPIOから赤外線データを送信
-  #   Return
-  #     True  : 成功
-  #     False : pigpioに接続失敗
   def send(self, code):
+    """
+    gpio_sendで指定したGPIOから赤外線データを送信
+
+    Args:
+      code: 送信する赤外線データ
+    
+    Returns:
+      bool: 成功ならTrue. pigpio接続失敗でFalse. 
+    """
     pi = pigpio.pi()
     if not pi.connected:
       return False
@@ -103,12 +110,18 @@ class Infrared:
 
     return True
 
-  # 赤外線を受信してcodeを返す
-  #   Return
-  #     (result, code)
-  #     result : 結果. REC_SUCCESS / REC_NO_DATA / REC_SHORT / REC_PIGPIO
-  #     code   : codeデータ
   def record(self):
+    """
+    赤外線を受信してcodeを返す
+    REC_SUCCESS: 成功
+    REC_NO_DATA: タイムアウト
+    REC_SHORT: 信号が短すぎる
+    REC_PIGPIO: pigpio接続失敗
+
+    Returns:
+      int: 結果. REC_SUCCESS / REC_NO_DATA / REC_SHORT / REC_PIGPIO
+      list: 赤外線データ(code)
+    """
     self._pi = pigpio.pi()
     if not self._pi.connected:
       return REC_ERR_PIGPIO, []
@@ -141,12 +154,28 @@ class Infrared:
 
     return (result, self._code)
 
-  # nをm単位で丸め処理を行う
   def _round(self, n, m):
+    """
+    nをm単位で丸め処理を行う
+
+    Args:
+      n: 丸める対象の値
+      m: 丸める単位
+    
+    Returns:
+      int: 結果
+    """
     return (n + m // 2) // m * m
 
-  # 受信波形の立ち上がり、立ち下がりエッジで呼ばれるコールバック
   def _call_back(self, gpio, level, tick):
+    """
+    受信波形の立ち上がり、立ち下がりエッジで呼ばれるコールバック
+
+    Args:
+      gpio: 対象GPIO
+      level: Lowなら0, Highなら1
+      tick: 時間[us]. 
+    """
     # 受信処理中のフラグが解除されている場合
     if not self._recording:
       return
@@ -178,13 +207,20 @@ class Infrared:
     else:
       self._recording = False  # 受信処理中のフラグ解除
 
-  # frames(バイト列データ)とフォーマットからcodeを生成する
-  #   Return
-  #     code
-  #   Parameters
-  #     ir_format : フォーマット. FORMAT_で始まる定数
-  #     frames    : バイト列データ
   def encode(self, ir_format, frames):
+    """
+    バイト列データ(frames)とフォーマットから赤外線データ(code)を生成する
+
+    Args:
+      ir_format: フォーマット. FORMAT_で始まる定数
+      frames: バイト列データ
+    
+    Returns:
+      list: 赤外線データ(code)
+
+    Raises:
+      ValueError: ir_formatの値が不明
+    """
     code = []
 
     if ir_format == FORMAT_AEHA:
@@ -194,17 +230,11 @@ class Infrared:
     elif ir_format == FORMAT_SONY:
       t = _T_SONY
     else:
-      return []
+      raise ValueError(ir_format)
 
     first_frame = True
 
     for frame in frames:
-      try:
-        if len(frame) == 0:
-          return []
-      except:
-        return []
-
       # Wait部
       if not first_frame:
         if ir_format == FORMAT_AEHA:
@@ -275,16 +305,19 @@ class Infrared:
 
     return code
 
-  # codeを解析してフォーマットとframes(バイト列)を返す
-  #   対応しているのはAEHA, NECフォーマット
-  #   先頭は必ずデータを含むフレームで、リピートコードは不可
-  #   Return
-  #     (ir_format, frames)
-  #     ir_format : フォーマット. FORMAT_で始まる定数
-  #     frames    : バイト列データ
-  #   Parameters
-  #     code : codeデータ
   def decode(self, code):
+    """
+    赤外線データ(code)を解析してフォーマットとバイト列(frames)を返す
+    対応しているのはAEHA, NEC, SONYフォーマット. 
+    先頭は必ずデータを含むフレームで、リピートコードは不可. 
+
+    Args:
+      code: 赤外線データ
+    
+    Returns:
+      int: フォーマット. FORMAT_で始まる定数
+      list: バイト列データ(frames)
+    """
     ir_format = FORMAT_UNKNOWN
 
     # codeが短いか偶数の場合はエラーとする
@@ -413,27 +446,34 @@ class Infrared:
           else:
             return FORMAT_UNKNOWN, []
 
-  # Mark, Spaceの長さが目標値+/-許容範囲と一致するか確認する
-  #   Return
-  #     True  : 一致
-  #     False : 不一致
-  #   Parameters
-  #     length : 長さ
-  #     target : 目標値
-  #     tol    : 許容範囲の割合
   def _cl(self, length, target, tol=0.35):
+    """
+    赤外線のMark, Spaceの長さが目標値+/-許容範囲と一致するか確認する
+
+    Args:
+      length: 実測長さ
+      target: フォーマットなどで決まっている目標値
+      tol: 許容範囲の割合. 0.35なら+/-35%まで許容. 
+    
+    Returns:
+      bool: 範囲内に一致したらTrue. それ以外はFalse
+    """
     if length > target * (1 - tol) and length < target * (1 + tol):
       return True
     else:
       return False
 
-  # frames(バイト列データ)を文字列に整形する
-  #   Return
-  #     文字列
-  #   Parameters
-  #     ir_format : フォーマット. FORMAT_で始まる定数
-  #     frames    : バイト列データ
   def frames2str(self, ir_format, frames):
+    """
+    バイト列データ(frames)を文字列に整形する
+
+    Args:
+      ir_format: フォーマット. FORMAT_で始まる定数
+      frames: バイト列データ
+    
+    Returns:
+      str: 整形した文字列
+    """
     if ir_format == FORMAT_AEHA:
       s = 'Format AEHA\n'
     elif ir_format == FORMAT_NEC:
@@ -459,13 +499,13 @@ class Infrared:
       first_frame = False
     return s
 
-  # 登録済みcode一覧をファイルに保存する
-  #   Return
-  #     True  : 成功
-  #     False : 失敗
-  #   Parameters
-  #     path : 保存ファイルのパス
   def save_codes(self):
+    """
+    登録済みcode一覧(codes)をファイルcodes_pathに保存する
+
+    Returns:
+      bool: 成功ならTrue. 失敗ならFalse. 
+    """
     try:
       with open(self.codes_path, 'w') as f:
         f.write(json.dumps(self.codes, ensure_ascii=False).replace('], ', '],\n'))
@@ -473,13 +513,13 @@ class Infrared:
     except:
       return False
 
-  # 登録済みcode一覧をファイルから読み出す
-  #   Return
-  #     True  : 成功
-  #     False : 失敗
-  #   Parameters
-  #     path : 保存ファイルのパス
   def load_codes(self):
+    """
+    登録済みcode一覧をファイルから読み出してcodesに入れる
+
+    Returns:
+      bool: 成功ならTrue. 失敗ならFalse. 
+    """
     try:
       with open(self.codes_path, 'r') as f:
         self.codes = json.load(f)

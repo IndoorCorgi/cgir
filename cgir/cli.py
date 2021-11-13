@@ -1,54 +1,54 @@
-#!/usr/bin/env python3
 """
 Raspberry Pi用赤外線送受信、データ解析ツール
 Indoor Corgi, https://www.indoorcorgielec.com
-Version 2020/9/3
+GitHub: https://github.com/IndoorCorgi/cgir
+Version 1.0
 
 必要環境:
-1) pigpioサービス
-  sudo service pigpiod start
-  sudo systemctl enable pigpiod.service 
-2) docoptモジュール
-  sudo pip3 install docopt
-3) cgir.pyモジュール
-  同梱のcgir.pyを同じディレクトリに配置
-4) 赤外線送受信に対応した拡張基板
+1) Raspberry Pi OS, Python3
+2) pigpioサービス
+  sudo systemctl start pigpiod
+  sudo systemctl enable pigpiod
+3) 赤外線送受信に対応した拡張基板
   RPZ-IR-Sensor https://www.indoorcorgielec.com/products/rpz-ir-sensor/
   RPi TPH Monitor https://www.indoorcorgielec.com/products/rpi-tph-monitor-rev2/
 
 Usage:
-  cgirtool.py rec  [-c <path>] [-g <gpio>] <code_name>...
-  cgirtool.py send [-c <path>] [-g <gpio>] [-w <wait>] <code_name>...
-  cgirtool.py list [-c <path>] 
-  cgirtool.py del  [-c <path>] <code_name>...
-  cgirtool.py dec  [-c <path>] -f <file> <code_name>
-  cgirtool.py enc  [-c <path>] -f <file> <code_name>
-  cgirtool.py -h --help
+  cgir rec  [-c <path>] [-g <gpio>] <code_name>...
+  cgir send [-c <path>] [-g <gpio>] [-w <wait>] <code_name>...
+  cgir list [-c <path>] 
+  cgir del  [-c <path>] <code_name>...
+  cgir dec  [-c <path>] -f <file> <code_name>
+  cgir enc  [-c <path>] -f <file> <code_name>
+  cgir -h --help
 
 Options:
-  rec          赤外線を受信してコードを保存. 
-  send         指定した名前の赤外線コードを送信. 
-  list         登録済み赤外線コード一覧を表示. 
-  del          指定した名前の赤外線コードを削除. 
-  dec          赤外線コードを解析して、フォーマットとデータに変換してファイル(json形式)に保存. 
-  enc          フォーマットとデータのファイル(json形式)から赤外線コードを生成. 
-  <code_name>  赤外線コードの名前. 複数指定可能. 
+  rec          赤外線を受信してコードを<code_name>という名前で保存. 
+  send         保存したコードの中から, <code_name>で指定した名前の赤外線コードを送信. 
+  list         保存した赤外線コード一覧を表示. 
+  del          保存したコードの中から, <code_name>で指定した名前の赤外線コードを削除. 
+  dec          保存したコードの中から, 赤外線コードを解析して, フォーマットとデータに変換して<file>ファイル(json形式)に保存. 
+  enc          フォーマットとデータの<file>ファイル(json形式)から赤外線コードを生成して<code_name>という名前で保存. 
+  <code_name>  赤外線コードの名前. rec, send, delでは複数指定可能. 
   -c <path>    登録済み赤外線コードを保存, 読み出すファイル名かパス. デフォルトはcodes.json
   -g <gpio>    送受信に使うGPIO番号. デフォルトは送信13, 受信4. 
   -w <wait>    複数のコードを送信する場合の間隔を秒数で指定. デフォルトは1. 
+  -f <file>    ファイル名. 
   -h --help    ヘルプを表示
 """
 
-import cgir
 from docopt import docopt
 import time
 import json
+from .infrared import *
 
 
-# メインルーチン
-def main():
+def cli():
+  """
+  コマンドラインツールを実行
+  """
   args = docopt(__doc__)
-  ir = cgir.Infrared()
+  ir = Infrared()
 
   # 登録済み赤外線コードを読み出す
   if args['-c'] != None:
@@ -70,7 +70,7 @@ def main():
       print('------------------------------------')
       print('赤外線コード"{}"を受信中...  受信機に向けて赤外線を送信して下さい.'.format(cname))
       result, code = ir.record()  # 受信開始
-      if result == cgir.REC_SUCCESS:
+      if result == REC_SUCCESS:
         print('\n受信コード')
         print(code)  # 受信コードを表示
 
@@ -83,11 +83,11 @@ def main():
           print('\n赤外線コード "{}" を登録しました.\n'.format(cname))
         else:
           print('\n赤外線コードの登録に失敗しました. {}のアクセス権を確認してください.'.format(ir.codes_path))
-      elif result == cgir.REC_NO_DATA:
+      elif result == REC_NO_DATA:
         print('受信失敗. データなし.\n')
-      elif result == cgir.REC_SHORT:
+      elif result == REC_SHORT:
         print('受信失敗. データ異常.\n')
-      elif result == cgir.REC_ERR_PIGPIO:
+      elif result == REC_ERR_PIGPIO:
         print('受信失敗. pigpioに接続できません.\n')
         return
 
@@ -162,7 +162,7 @@ def main():
     ir_format, frames = ir.decode(code)
     print(ir.frames2str(ir_format, frames))  # デコードした結果を表示
 
-    if ir_format == cgir.FORMAT_UNKNOWN:
+    if ir_format == FORMAT_UNKNOWN:
       print('フォーマットが未対応か不明です. ファイルに記録せずに終了します. ')
       return
 
@@ -172,28 +172,27 @@ def main():
     obj['data'] = frames
 
     try:
-      with open(args['<file>'], 'w') as f:
+      with open(args['-f'], 'w') as f:
         f.write(json.dumps(obj, indent=2, ensure_ascii=False))
-        print('\nファイル "{}" へ保存しました.'.format(args['<file>']))
+        print('\nファイル "{}" へ保存しました.'.format(args['-f']))
     except:
       print('\nファイルへ保存に失敗しました.')
 
   # エンコード
   if args['enc']:
     try:
-      with open(args['<file>'], 'r') as f:
+      with open(args['-f'], 'r') as f:
         obj = json.load(f)
     except:
-      print('\nファイル "{}" の読み出しに失敗しました.'.format(args['<file>']))
+      print('\nファイル "{}" の読み出しに失敗しました.'.format(args['-f']))
       return
 
     # フォーマットとデータがあるか確認
     if not ('format' in obj and 'data' in obj):
-      print('\nファイル "{}" にフォーマットとデータがみつかりません.'.format(args['<file>']))
+      print('\nファイル "{}" にフォーマットとデータがみつかりません.'.format(args['-f']))
       return
 
-    if obj['format'] != cgir.FORMAT_AEHA and obj['format'] != cgir.FORMAT_NEC and obj[
-        'format'] != cgir.FORMAT_SONY:
+    if obj['format'] != FORMAT_AEHA and obj['format'] != FORMAT_NEC and obj['format'] != FORMAT_SONY:
       print('フォーマットが未対応か不明です.')
       return
 
@@ -202,7 +201,7 @@ def main():
       print('エンコードに失敗しました.')
       return
 
-    print('ファイル "{}" をエンコード\n'.format(args['<file>']))
+    print('ファイル "{}" をエンコード\n'.format(args['-f']))
     print(code)
     cname = args['<code_name>'][0]
 
@@ -213,14 +212,18 @@ def main():
       print('\n赤外線コードの登録に失敗しました. {}のアクセス権を確認してください.'.format(ir.codes_path))
 
 
-# GPIO番号(文字列)の指定が正しければGPIO(数値)を, 数値でなかったり範囲外であれば-1を返す
 def check_gpio(gpio_str):
+  """
+  GPIO番号(文字列)の指定が正しければGPIO(数値)を, 数値でなかったり範囲外であれば-1を返す
+
+  Args:
+    gpio_str: チェックするGPIO番号の文字列
+  
+  Returns:
+    int: 正しければGPIO番号. 数値でなかったり範囲外であれば-1
+  """
   if gpio_str.isdecimal():
     gpio = int(gpio_str)
     if gpio >= 0 and gpio <= 27:
       return gpio
   return -1
-
-
-if __name__ == '__main__':
-  main()
