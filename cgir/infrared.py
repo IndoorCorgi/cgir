@@ -110,13 +110,16 @@ class Infrared:
 
     return True
 
-  def record(self):
+  def record(self, timeout=10):
     """
     赤外線を受信してcodeを返す
     REC_SUCCESS: 成功
     REC_NO_DATA: タイムアウト
     REC_SHORT: 信号が短すぎる
     REC_PIGPIO: pigpio接続失敗
+
+    Args:
+      timeout: タイムアウトを秒数で指定
 
     Returns:
       int: 結果. REC_SUCCESS / REC_NO_DATA / REC_SHORT / REC_PIGPIO
@@ -136,10 +139,15 @@ class Infrared:
     self._recording = True  # 受信処理中のフラグセット
 
     i = 0
+    timeout_count = int(timeout) * 10
     while self._recording:
       time.sleep(0.1)
       i += 1
-      if i >= 100:
+      if i >= timeout_count:
+        self._recording = False  # 受信処理中のフラグ解除
+        self._pi.set_watchdog(self.gpio_rec, 0)  # watchdog解除
+        self._pi.set_glitch_filter(self.gpio_rec, 0)
+        self._pi.stop()
         return (REC_NO_DATA, [])  # タイムアウト
 
     self._pi.set_watchdog(self.gpio_rec, 0)  # watchdog解除
