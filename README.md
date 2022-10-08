@@ -16,6 +16,8 @@ Raspberry Piで赤外線送受信、データ解析をするPythonパッケー�
 ## 動作環境
 Raspberry Pi OSの動作しているRaspberry Piと、赤外線送受信機能のある以下の拡張基板の組み合わせを想定しています。GPIO番号を変更することで他の拡張基板、HAT、自作回路でも利用可能です。
 
+- Raspberry Pi用 人感/明るさセンサー/赤外線 拡張基板「[RPZ-PIRS](https://www.indoorcorgielec.com/products/rpz-pirs/)」
+
 - Raspberry Pi用 温度/湿度/気圧/明るさ/赤外線 ホームIoT拡張ボード「[RPZ-IR-Sensor](https://www.indoorcorgielec.com/products/rpz-ir-sensor/)」
 
 - Raspberry Pi用 温度/湿度/気圧/赤外線 ホームIoT拡張ボード「[RPi TPH Monitor](https://www.indoorcorgielec.com/products/rpi-tph-monitor-rev2/)」

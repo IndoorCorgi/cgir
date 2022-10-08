@@ -10,6 +10,7 @@ Version 1.0
   sudo systemctl start pigpiod
   sudo systemctl enable pigpiod
 3) 赤外線送受信に対応した拡張基板
+  RPZ-PIRS https://www.indoorcorgielec.com/products/rpz-pirs/
   RPZ-IR-Sensor https://www.indoorcorgielec.com/products/rpz-ir-sensor/
   RPi TPH Monitor https://www.indoorcorgielec.com/products/rpi-tph-monitor-rev2/
 
