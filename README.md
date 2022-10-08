@@ -25,6 +25,7 @@ Raspberry Pi OSの動作しているRaspberry Piと、赤外線送受信機能�
 ### 動作確認済Raspberry Pi
 - Raspberry Pi 4 Model B
 - Raspberry Pi 3 Model B/B+
+- Raspberry Pi Zero 2W
 - Raspberry Pi Zero W/WH
 - Raspberry Pi Zero
 
