@@ -66,5 +66,15 @@ python3のスクリプトからは`import cgir`とすることでパッケージ
 
 `ExecStart=/usr/bin/pigpio -l -t 0`
 
+pigpioを自動起動にしている場合、起動タイミングを遅らせると解決する場合があります。スーパーユーザーで /lib/systemd/system/pigpiod.service ファイルを開き、2行目のDescription行の次の行に「After=multi-user.target」を追加します。編集後にRasbperry Piを再起動します。
+
+```
+[Unit]
+Description=Daemon required to control GPIO pins via pigpio
+After=multi-user.target
+[Service]
+... (これ以降変更なし)
+```
+
 ## 注意事項
 赤外線送受信はメーカーや機器によって仕様が異なります。全ての機器での動作を保証するものではありません。
