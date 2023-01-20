@@ -78,31 +78,36 @@ class Infrared:
 
     pi.set_mode(self.gpio_send, pigpio.OUTPUT)
 
-    # 生成できる波形の長さには制限があるので、種類とcodeの長さごとにまとめて節約する
-    mark_wids = {}  # Mark(38kHzパルス)波形, key:長さ, value:ID
-    space_wids = {}  # Speace(待機)波形, key:長さ, value:ID
-    send_wids = [0] * len(code)  # 送信する波形IDのリスト
+    # 生成できる波形の数には制限があるので、codeの長さごとにまとめて節約する
+    # 送信する波形IDのリストの長さにも制限があるので、Mark(38kHzパルス)とSpace(待機)を1組とする
+    wids = {}  # key:(Mark長さ, Space長さ), value:ID
+    send_wids = []  # 送信する波形IDのリスト
 
     pi.wave_clear()
 
     for i in range(len(code)):
-      if i % 2 == 0:
-        # 同じ長さのMark波形が無い場合は新しく生成
-        if code[i] not in mark_wids:
-          pulses = []
-          n = code[i] // 26  # 38kHz = 26us周期の繰り返し回数
-          for j in range(n):
-            pulses.append(pigpio.pulse(1 << self.gpio_send, 0, 8))  # 8us highパルス
-            pulses.append(pigpio.pulse(0, 1 << self.gpio_send, 18))  # 18us lowパルス
-          pi.wave_add_generic(pulses)
-          mark_wids[code[i]] = pi.wave_create()
-        send_wids[i] = mark_wids[code[i]]
-      else:
-        # 同じ長さのSpace波形が無い場合は新しく生成
-        if code[i] not in space_wids:
-          pi.wave_add_generic([pigpio.pulse(0, 0, code[i])])
-          space_wids[code[i]] = pi.wave_create()
-        send_wids[i] = space_wids[code[i]]
+      if i % 2 != 0:  # MarkとSpaceをセットで処理するので奇数はスキップ
+        continue
+
+      if i == len(code) - 1:  # codeの最後のMarkの場合
+        mark_length = code[i]
+        space_length = 0
+      else:  # 通常のMarkの場合
+        mark_length = code[i]
+        space_length = code[i + 1]
+
+      # 同じ長さのMark, Space波形が無い場合は新しく生成
+      if (mark_length, space_length) not in wids:
+        pulses = []
+        n = mark_length // 26  # 38kHz = 26us周期の繰り返し回数
+        for j in range(n):
+          pulses.append(pigpio.pulse(1 << self.gpio_send, 0, 8))  # 8us highパルス
+          pulses.append(pigpio.pulse(0, 1 << self.gpio_send, 18))  # 18us lowパルス
+        if space_length > 0:
+          pulses.append(pigpio.pulse(0, 0, space_length))  # Space部
+        pi.wave_add_generic(pulses)  # Mark部
+        wids[(mark_length, space_length)] = pi.wave_create()
+      send_wids.append(wids[(mark_length, space_length)])
 
     pi.wave_chain(send_wids)
     pi.wave_clear()
