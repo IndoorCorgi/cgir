@@ -19,7 +19,7 @@ REC_NO_DATA = 1  # 受信失敗 データなし, タイムアウト
 REC_SHORT = 2  # 受信失敗 データが短いかリピートコード
 REC_ERR_PIGPIO = 3  # pigpio接続失敗
 
-_T_MAX_GAP = 30000  # recordでこれ以上間隔が空いたらそれ以降は受信しない[us]
+_T_MAX_GAP = 60000  # recordでこれ以上間隔が空いたらそれ以降は受信しない[us]
 _T_AEHA = 425  # AEHAフォーマットの基準周期[us]
 _T_NEC = 560  # NECフォーマットの基準周期[us]
 _T_SONY = 600  # SONYフォーマットの基準周期[us]
