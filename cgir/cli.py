@@ -2,7 +2,7 @@
 Raspberry Pi用赤外線送受信、データ解析ツール
 Indoor Corgi, https://www.indoorcorgielec.com
 GitHub: https://github.com/IndoorCorgi/cgir
-Version 1.1
+Version 1.2
 
 必要環境:
 1) Raspberry Pi OS, Python3
