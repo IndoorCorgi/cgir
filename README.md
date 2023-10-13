@@ -37,7 +37,7 @@ Raspberry Pi OSの動作しているRaspberry Piと、赤外線送受信機能�
 ## インストール
 以下のコマンドでインストール/アップグレードできます。
 
-`sudo python3 -m pip install -U cgir`
+`sudo python3 -m pip install -U cgir --break-system-packages`
 
 ## 前準備
 本ソフトウェアはpigpioサービスを利用します。
