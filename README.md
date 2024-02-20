@@ -29,6 +29,10 @@ Raspberry Pi OSの動作しているRaspberry Piと、赤外線送受信機能�
 - Raspberry Pi Zero W/WH
 - Raspberry Pi Zero
 
+### Raspberry Pi 5について
+Raspberry Pi 5では信号制御に利用しているpigpioが動作しないため、本ソフトも動作しません。
+対応は検討中です。
+
 ### 必要なソフトウェア
 - Raspberry Pi OS
 - Python3
