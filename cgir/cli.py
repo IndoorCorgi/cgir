@@ -88,9 +88,6 @@ def cli():
         print('受信失敗. データなし.\n')
       elif result == REC_SHORT:
         print('受信失敗. データ異常.\n')
-      elif result == REC_ERR_PIGPIO:
-        print('受信失敗. pigpioに接続できません.\n')
-        return
 
   # 赤外線送信
   if args['send']:
@@ -121,9 +118,7 @@ def cli():
         time.sleep(wait)
       if cname in ir.codes:
         print('赤外線コード "{}" を送信中...'.format(cname))
-        if not ir.send(ir.codes[cname]):
-          print('送信失敗. pigpioに接続できません.\n')
-          return
+        ir.send(ir.codes[cname])
       else:
         print('赤外線コード "{}" が見つかりません.'.format(cname))
       first_time = False

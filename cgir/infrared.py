@@ -4,9 +4,9 @@ Indoor Corgi, https://www.indoorcorgielec.com
 GitHub: https://github.com/IndoorCorgi/cgir
 """
 
-import pigpio
-import time
+import fcntl
 import json
+import select
 
 # 定数
 FORMAT_UNKNOWN = "Unknown"  # フォーマット不明
@@ -17,13 +17,17 @@ FORMAT_SONY = "SONY"  # SONYフォーマット
 REC_SUCCESS = 0  # 受信成功
 REC_NO_DATA = 1  # 受信失敗 データなし, タイムアウト
 REC_SHORT = 2  # 受信失敗 データが短いかリピートコード
-REC_ERR_PIGPIO = 3  # pigpio接続失敗
 
-_T_MAX_GAP = 60000  # recordでこれ以上間隔が空いたらそれ以降は受信しない[us]
 _T_AEHA = 425  # AEHAフォーマットの基準周期[us]
 _T_NEC = 560  # NECフォーマットの基準周期[us]
 _T_SONY = 600  # SONYフォーマットの基準周期[us]
 _T_WAIT = 10000  # encode, decodeで使用するフレーム間の時間[us]
+
+LIRC_MODE_RAW = 0x00000001
+LIRC_MODE_PULSE = 0x00000002
+LIRC_MODE_MODE2 = 0x00000004
+LIRC_MODE_SCANCODE = 0x00000008
+LIRC_MODE_LIRCCODE = 0x00000010
 
 
 class Infrared:
@@ -50,69 +54,43 @@ class Infrared:
       ]
   
   Attributes:
-    gpio_send: 赤外線LEDのGPIO番号
-    gpio_rec: 赤外線受信機のGPIO番号
+    dev_send: 赤外線LEDのデバイスファイル. 例:/dev/lirc0
+    dev_rec: 赤外線受信機のデバイスファイル. 例:/dev/lirc1
     codes_path: 登録済みcode一覧を保存するファイル名
     codes: 保存済codeを管理する辞書. コード名がKeyで赤外線データ(code形式)がValue
+    rec_max_gap_us: 受信時, これ以上間隔が空いたら受信終了[us]
   """
 
-  def __init__(self, gpio_send=13, gpio_rec=4, codes_path='codes.json'):
-    self.gpio_send = gpio_send
-    self.gpio_rec = gpio_rec
+  def __init__(self,
+               dev_send='/dev/lirc0',
+               dev_rec='/dev/lirc1',
+               codes_path='codes.json',
+               rec_max_gap_us=60000):
+    self.dev_send = dev_send
+    self.dev_rec = dev_rec
     self.codes_path = codes_path
     self.codes = {}
+    self.rec_max_gap_us = rec_max_gap_us
 
   def send(self, code):
     """
-    gpio_sendで指定したGPIOから赤外線データを送信
+    dev_sendで指定したデバイスから赤外線データを送信
 
     Args:
       code: 送信する赤外線データ
     
-    Returns:
-      bool: 成功ならTrue. pigpio接続失敗でFalse. 
+    Retunrs:
+      bool: 成功ならTrue. 問題発生時は例外. Falseは返さないが互換性のため戻り値を残している
     """
-    pi = pigpio.pi()
-    if not pi.connected:
-      return False
-
-    pi.set_mode(self.gpio_send, pigpio.OUTPUT)
-
-    # 生成できる波形の数には制限があるので、codeの長さごとにまとめて節約する
-    # 送信する波形IDのリストの長さにも制限があるので、Mark(38kHzパルス)とSpace(待機)を1組とする
-    wids = {}  # key:(Mark長さ, Space長さ), value:ID
-    send_wids = []  # 送信する波形IDのリスト
-
-    pi.wave_clear()
-
-    for i in range(len(code)):
-      if i % 2 != 0:  # MarkとSpaceをセットで処理するので奇数はスキップ
-        continue
-
-      if i == len(code) - 1:  # codeの最後のMarkの場合
-        mark_length = code[i]
-        space_length = 0
-      else:  # 通常のMarkの場合
-        mark_length = code[i]
-        space_length = code[i + 1]
-
-      # 同じ長さのMark, Space波形が無い場合は新しく生成
-      if (mark_length, space_length) not in wids:
-        pulses = []
-        n = mark_length // 26  # 38kHz = 26us周期の繰り返し回数
-        for j in range(n):
-          pulses.append(pigpio.pulse(1 << self.gpio_send, 0, 8))  # 8us highパルス
-          pulses.append(pigpio.pulse(0, 1 << self.gpio_send, 18))  # 18us lowパルス
-        if space_length > 0:
-          pulses.append(pigpio.pulse(0, 0, space_length))  # Space部
-        pi.wave_add_generic(pulses)  # Mark部
-        wids[(mark_length, space_length)] = pi.wave_create()
-      send_wids.append(wids[(mark_length, space_length)])
-
-    pi.wave_chain(send_wids)
-    pi.wave_clear()
-    pi.stop()
-
+    with open(self.dev_send, 'wb') as fd:
+      features = self.lirc_get_features(fd)
+      if not self.lirc_can_send_pulse(features):
+        raise Exception('LIRC send device do not support pulse mode')
+      self.lirc_set_send_carrier(fd, 38000)
+      self.lirc_set_send_mode(fd, LIRC_MODE_PULSE)
+      lirc_data = self.code2lirc_data(code)
+      fd.write(lirc_data)
+    
     return True
 
   def record(self, timeout=10):
@@ -121,51 +99,56 @@ class Infrared:
     REC_SUCCESS: 成功
     REC_NO_DATA: タイムアウト
     REC_SHORT: 信号が短すぎる
-    REC_PIGPIO: pigpio接続失敗
 
     Args:
       timeout: タイムアウトを秒数で指定
 
     Returns:
-      int: 結果. REC_SUCCESS / REC_NO_DATA / REC_SHORT / REC_PIGPIO
+      int: 結果. REC_SUCCESS / REC_NO_DATA / REC_SHORT / REC_LIRC
       list: 赤外線データ(code)
     """
-    self._pi = pigpio.pi()
-    if not self._pi.connected:
-      return REC_ERR_PIGPIO, []
+    with open(self.dev_rec, 'rb') as fd:
+      features = self.lirc_get_features(fd)
+      if not self.lirc_can_rec_mode2(features):
+        raise Exception('LIRC receive device do not support mode2 mode')
+      if not self.lirc_can_set_timeout(features):
+        raise Exception('LIRC receive device do not support timeout')
+      self.lirc_set_rec_timeout(fd, self.rec_max_gap_us)
+      self.lirc_set_rec_mode(fd, LIRC_MODE_MODE2)
 
-    self._pi.set_mode(self.gpio_rec, pigpio.INPUT)
-    self._pi.set_glitch_filter(self.gpio_rec, 100)
-    self._code = []
-    self.last_tick = 0
+      code = []  # 受信したデータを格納
 
-    self._pi.callback(self.gpio_rec, pigpio.EITHER_EDGE, self._call_back)
+      # 受信データをLIRCドライバーから読み出すループ
+      while True:
+        ready = select.select([fd], [], [], timeout)
+        if ready[0]:
+          buf = fd.read(4)
+          packet = buf[3]  # 上位8bitがパケットタイプ
+          data = buf[0] | (buf[1] << 8) | (buf[2] << 16)  # 下位24bitがデータ
 
-    self._recording = True  # 受信処理中のフラグセット
-
-    i = 0
-    timeout_count = int(timeout) * 10
-    while self._recording:
-      time.sleep(0.1)
-      i += 1
-      if i >= timeout_count:
-        self._recording = False  # 受信処理中のフラグ解除
-        self._pi.set_watchdog(self.gpio_rec, 0)  # watchdog解除
-        self._pi.set_glitch_filter(self.gpio_rec, 0)
-        self._pi.stop()
-        return (REC_NO_DATA, [])  # タイムアウト
-
-    self._pi.set_watchdog(self.gpio_rec, 0)  # watchdog解除
-    self._pi.set_glitch_filter(self.gpio_rec, 0)
-    self._pi.stop()
+          if (packet == 0):
+            # スペース
+            if len(code) % 2 == 1:
+              code.append(data)
+            print('space {}'.format(data))
+          elif (packet == 1):
+            # パルス
+            print('pulse {}'.format(data))
+            if len(code) % 2 == 0:
+              code.append(data)
+          elif (packet == 3):
+            # 間隔が空いて受信終了
+            break
+        else:
+          return REC_NO_DATA, []
 
     # codeが短い場合は戻り値を変える
-    if len(self._code) > 10:
+    if len(code) > 10:
       result = REC_SUCCESS
     else:
       result = REC_SHORT
 
-    return (result, self._code)
+    return (result, code)
 
   def _round(self, n, m):
     """
@@ -179,46 +162,6 @@ class Infrared:
       int: 結果
     """
     return (n + m // 2) // m * m
-
-  def _call_back(self, gpio, level, tick):
-    """
-    受信波形の立ち上がり、立ち下がりエッジで呼ばれるコールバック
-
-    Args:
-      gpio: 対象GPIO
-      level: Lowなら0, Highなら1
-      tick: 時間[us]. 
-    """
-    # 受信処理中のフラグが解除されている場合
-    if not self._recording:
-      return
-
-    # エッジを検出した場合
-    if level == 0 or level == 1:
-      if self.last_tick == 0:
-        self._pi.set_watchdog(self.gpio_rec, 100)  # watchdog設定
-      else:
-        length = pigpio.tickDiff(self.last_tick, tick)
-
-        # 一定以上長い場合は受信終了
-        if length > _T_MAX_GAP:
-          self._recording = False  # 受信処理中のフラグ解除
-          return
-
-        # 長さがばらつくので丸め処理
-        if length < 1000:
-          length = self._round(length, 10)
-        elif length < 2000:
-          length = self._round(length, 50)
-        else:
-          length = self._round(length, 200)
-
-        self._code.append(length)
-      self.last_tick = tick
-
-    # Watchdogで呼ばれた場合
-    else:
-      self._recording = False  # 受信処理中のフラグ解除
 
   def encode(self, ir_format, frames):
     """
@@ -541,3 +484,174 @@ class Infrared:
       pass
     self.codes = {}
     return False
+
+  @classmethod
+  def lirc_read(cls, fd, command):
+    """
+    lircドライバーから読み出す
+    
+    Args:
+      fd: デバイスファイル/dev/lircXをopenしたstream
+      command: コマンド
+    
+    Returns:
+      int: 読み出した値 32bit
+
+    ioctlフォーマット
+      bit
+      31-30: 読み出し0b10
+      29-16: バイト数. 4. 
+      15-8: 0x69
+        7-0: コマンド
+    """
+    buf = bytearray(4)
+    write_data = (0b10 << 30) | (4 << 16) | (0x69 << 8) | command
+    fcntl.ioctl(fd, write_data, buf)
+    return buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24)
+
+  @classmethod
+  def lirc_write(cls, fd, command, data):
+    """
+    lircドライバーに書き込む
+    
+    Args:
+      fd: デバイスファイル/dev/lircXをopenしたstream
+      command: コマンド
+      data: データ. 32bit整数. 
+
+    ioctlフォーマット
+      bit
+      31-30: 書き込み0b01
+      29-16: バイト数. 4. 
+      15-8: 0x69
+        7-0: コマンド
+    """
+    buf = bytearray([data & 0xFF, (data >> 8) & 0xFF, (data >> 16) & 0xFF, (data >> 24) & 0xFF])
+    write_data = (0b01 << 30) | (4 << 16) | (0x69 << 8) | command
+    fcntl.ioctl(fd, write_data, buf)
+
+  @classmethod
+  def lirc_get_features(cls, fd):
+    """
+    lircのサポートしている機能一覧を示す値を取得
+    
+    Args:
+      fd: デバイスファイル/dev/lircXをopenしたstream
+    
+    Returns:
+      int: 機能一覧を示す値featuresの値
+    """
+    return cls.lirc_read(fd, 0)
+
+  @classmethod
+  def lirc_can_send_pulse(cls, features):
+    """
+    lirc送信機でPULSEモードをサポートしているか確認
+    
+    Args:
+      features: lirc_get_featuresで取得した値
+    
+    Returns:
+      bool: サポートしていればTrue
+    """
+    if 0 == (features & (0x00000002)):
+      return False
+
+    return True
+
+  @classmethod
+  def lirc_can_rec_mode2(cls, features):
+    """
+    lirc受信機でMODE2モードをサポートしているか確認
+    
+    Args:
+      features: lirc_get_featuresで取得した値
+    
+    Returns:
+      bool: サポートしていればTrue
+    """
+    if 0 == (features & (0x00000004 << 16)):
+      return False
+
+    return True
+
+  @classmethod
+  def lirc_can_set_timeout(cls, features):
+    """
+    lirc受信機でタイムアウト設定をサポートしているか確認
+    
+    Args:
+      features: lirc_get_featuresで取得した値
+    
+    Returns:
+      bool: サポートしていればTrue
+    """
+    if 0 == (features & 0x10000000):
+      return False
+
+    return True
+
+  @classmethod
+  def lirc_set_send_mode(cls, fd, mode):
+    """
+    lirc送信機のモードを設定
+    
+    Args:
+      fd: デバイスファイル/dev/lircXをopenしたstream
+      mode: LIRC_MODE_で始まる定数
+    """
+    cls.lirc_write(fd, 0x11, mode)
+
+  @classmethod
+  def lirc_set_send_carrier(cls, fd, freq):
+    """
+    lirc送信機のキャリア周波数を設定
+    
+    Args:
+      fd: デバイスファイル/dev/lircXをopenしたstream
+      freq: キャリア周波数[Hz]
+    """
+    cls.lirc_write(fd, 0x13, freq)
+
+  @classmethod
+  def lirc_set_rec_mode(cls, fd, mode):
+    """
+    lirc受信機のモードを設定
+    
+    Args:
+      fd: デバイスファイル/dev/lircXをopenしたstream
+      mode: LIRC_MODE_で始まる定数
+    """
+    cls.lirc_write(fd, 0x12, mode)
+
+  @classmethod
+  def lirc_set_rec_timeout(cls, fd, timeout):
+    """
+    lirc受信機のタイムアウト(これ以上の時間受信データがなければ受信終了)を設定
+    
+    Args:
+      fd: デバイスファイル/dev/lircXをopenしたstream
+      freq: タイムアウト[us]
+    """
+    cls.lirc_write(fd, 0x18, timeout)
+
+  @classmethod
+  def code2lirc_data(cls, code):
+    """
+    codeをlircドライバー書き込み用のbytearray形式に変換
+
+    Args:
+      code: 赤外線データ
+
+    Returns:
+      bytearray: lirc用bytearray形式の赤外線データ
+    """
+    a = bytearray()
+
+    for item in code:
+      a.append(item & 0xFF)
+      a.append((item >> 8) & 0xFF)
+      a.append((item >> 16) & 0xFF)
+      a.append((item >> 24) & 0xFF)
+
+    return a
