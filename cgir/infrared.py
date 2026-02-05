@@ -90,7 +90,7 @@ class Infrared:
       self.lirc_set_send_mode(fd, LIRC_MODE_PULSE)
       lirc_data = self.code2lirc_data(code)
       fd.write(lirc_data)
-    
+
     return True
 
   def record(self, timeout=10):
@@ -150,7 +150,8 @@ class Infrared:
 
     return (result, code)
 
-  def _round(self, n, m):
+  @classmethod
+  def _round(cls, n, m):
     """
     nをm単位で丸め処理を行う
 
@@ -163,7 +164,8 @@ class Infrared:
     """
     return (n + m // 2) // m * m
 
-  def encode(self, ir_format, frames):
+  @classmethod
+  def encode(cls, ir_format, frames):
     """
     バイト列データ(frames)とフォーマットから赤外線データ(code)を生成する
 
@@ -196,9 +198,9 @@ class Infrared:
         if ir_format == FORMAT_AEHA:
           code.append(_T_WAIT)
         elif ir_format == FORMAT_NEC:
-          code.append(self._round(108000 - t * t_count, 100))
+          code.append(cls._round(108000 - t * t_count, 100))
         elif ir_format == FORMAT_SONY:
-          code.append(self._round(45000 - t * t_count, 100))
+          code.append(cls._round(45000 - t * t_count, 100))
 
       t_count = 0
 
@@ -261,7 +263,8 @@ class Infrared:
 
     return code
 
-  def decode(self, code):
+  @classmethod
+  def decode(cls, code):
     """
     赤外線データ(code)を解析してフォーマットとバイト列(frames)を返す
     対応しているのはAEHA, NEC, SONYフォーマット. 
@@ -281,13 +284,13 @@ class Infrared:
       return FORMAT_UNKNOWN, []
 
     # Leader
-    if self._cl(code[0], _T_AEHA * 8) and self._cl(code[1], _T_AEHA * 4):
+    if cls._cl(code[0], _T_AEHA * 8) and cls._cl(code[1], _T_AEHA * 4):
       ir_format = FORMAT_AEHA
       t = _T_AEHA
-    elif self._cl(code[0], _T_NEC * 16) and self._cl(code[1], _T_NEC * 8):
+    elif cls._cl(code[0], _T_NEC * 16) and cls._cl(code[1], _T_NEC * 8):
       ir_format = FORMAT_NEC
       t = _T_NEC
-    elif self._cl(code[0], _T_SONY * 4) and self._cl(code[1], _T_SONY):
+    elif cls._cl(code[0], _T_SONY * 4) and cls._cl(code[1], _T_SONY):
       ir_format = FORMAT_SONY
       t = _T_SONY
     else:
@@ -310,22 +313,22 @@ class Infrared:
           # フォーマットに合ったLeaderか確認
           if ir_format == FORMAT_AEHA:
             # Leader
-            if self._cl(code[i], _T_AEHA * 8) and self._cl(code[i + 1], _T_AEHA * 4):
+            if cls._cl(code[i], _T_AEHA * 8) and cls._cl(code[i + 1], _T_AEHA * 4):
               end_of_frame = False
               continue
             # Repeat
-            elif self._cl(code[i], _T_AEHA * 8) and self._cl(code[i + 1], _T_AEHA * 8):
+            elif cls._cl(code[i], _T_AEHA * 8) and cls._cl(code[i + 1], _T_AEHA * 8):
               end_of_frame = False
               continue
             else:
               return FORMAT_UNKNOWN, []
           elif ir_format == FORMAT_NEC:
             # Leader
-            if self._cl(code[i], _T_NEC * 16) and self._cl(code[i + 1], _T_NEC * 8):
+            if cls._cl(code[i], _T_NEC * 16) and cls._cl(code[i + 1], _T_NEC * 8):
               end_of_frame = False
               continue
             # Repeat
-            elif self._cl(code[i], _T_NEC * 16) and self._cl(code[i + 1], _T_NEC * 4):
+            elif cls._cl(code[i], _T_NEC * 16) and cls._cl(code[i + 1], _T_NEC * 4):
               end_of_frame = False
               continue
             else:
@@ -336,14 +339,14 @@ class Infrared:
           # Last index
           if i == len(code) - 1:
             # Stopの長さとデータのbit数がByte単位か確認
-            if self._cl(code[i], t) and bit_counter == 0:
+            if cls._cl(code[i], t) and bit_counter == 0:
               frames.append(byte_list)
               return ir_format, frames
             else:
               return FORMAT_UNKNOWN, []
 
           # Stopの後に長いSpaceがある場合は次のフレームがあると解釈
-          if self._cl(code[i], t) and code[i + 1] > _T_WAIT * 0.5:
+          if cls._cl(code[i], t) and code[i + 1] > _T_WAIT * 0.5:
             frames.append(byte_list)
             byte_list = []
             byte = 0
@@ -351,13 +354,13 @@ class Infrared:
             continue
 
           # Data 0
-          if self._cl(code[i], t) and self._cl(code[i + 1], t):
+          if cls._cl(code[i], t) and cls._cl(code[i + 1], t):
             bit_counter = (bit_counter + 1) % 8
             if bit_counter == 0:
               byte_list.append(byte)
               byte = 0
           # Data 1
-          elif self._cl(code[i], t) and self._cl(code[i + 1], t * 3):
+          elif cls._cl(code[i], t) and cls._cl(code[i + 1], t * 3):
             byte = byte + (1 << bit_counter)
             bit_counter = (bit_counter + 1) % 8
             if bit_counter == 0:
@@ -371,7 +374,7 @@ class Infrared:
     elif ir_format == FORMAT_SONY:
       for i in range(1, len(code), 2):
         # 長いSpaceの後にLeaderがある場合は次のフレームと解釈
-        if code[i] > _T_WAIT * 0.5 and self._cl(code[i + 1], t * 4) and i <= len(code) - 3:
+        if code[i] > _T_WAIT * 0.5 and cls._cl(code[i + 1], t * 4) and i <= len(code) - 3:
           byte_list.append(byte & 0x7F)
           byte_list.append(byte >> 7)
           frames.append(byte_list)
@@ -381,10 +384,10 @@ class Infrared:
           continue
 
         # Data 0
-        elif self._cl(code[i], t) and self._cl(code[i + 1], t):
+        elif cls._cl(code[i], t) and cls._cl(code[i + 1], t):
           bit_counter += 1
         # Data 1
-        elif self._cl(code[i], t) and self._cl(code[i + 1], t * 2):
+        elif cls._cl(code[i], t) and cls._cl(code[i + 1], t * 2):
           byte = byte + (1 << bit_counter)
           bit_counter += 1
 
@@ -402,7 +405,8 @@ class Infrared:
           else:
             return FORMAT_UNKNOWN, []
 
-  def _cl(self, length, target, tol=0.35):
+  @classmethod
+  def _cl(cls, length, target, tol=0.35):
     """
     赤外線のMark, Spaceの長さが目標値+/-許容範囲と一致するか確認する
 
@@ -419,7 +423,8 @@ class Infrared:
     else:
       return False
 
-  def frames2str(self, ir_format, frames):
+  @classmethod
+  def frames2str(cls, ir_format, frames):
     """
     バイト列データ(frames)を文字列に整形する
 
