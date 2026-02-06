@@ -148,16 +148,17 @@ def cli():
       return
 
     # ファイルに保存する形式にする
-    obj = {}
-    obj['format'] = ir_format
-    obj['data'] = frames
+    if args.file is not None:
+      obj = {}
+      obj['format'] = ir_format
+      obj['data'] = frames
 
-    try:
-      with open(args.file, 'w') as f:
-        f.write(json.dumps(obj, indent=2, ensure_ascii=False))
-        print('\nファイル "{}" へ保存しました.'.format(args.file))
-    except:
-      print('\nファイルへ保存に失敗しました.')
+      try:
+        with open(args.file, 'w') as f:
+          f.write(json.dumps(obj, indent=2, ensure_ascii=False))
+          print('\nファイル "{}" へ保存しました.'.format(args.file))
+      except:
+        print('\nファイルへ保存に失敗しました.')
 
   # エンコード
   if args.command == 'enc':
