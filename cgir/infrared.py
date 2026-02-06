@@ -1,7 +1,6 @@
 """
-Raspberry Pi用 赤外線送受信、データ解析モジュール
-Indoor Corgi, https://www.indoorcorgielec.com
-GitHub: https://github.com/IndoorCorgi/cgir
+Copyright (c) 2020 Indoor Corgi
+SPDX-License-Identifier: Apache-2.0
 """
 
 import fcntl

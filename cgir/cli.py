@@ -1,3 +1,8 @@
+"""
+Copyright (c) 2020 Indoor Corgi
+SPDX-License-Identifier: Apache-2.0
+"""
+
 description = """
 Raspberry Pi用赤外線送受信、データ解析ツール
 GitHub: https://github.com/IndoorCorgi/cgir
