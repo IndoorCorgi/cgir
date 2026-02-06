@@ -130,10 +130,8 @@ class Infrared:
             # スペース
             if len(code) % 2 == 1:
               code.append(data)
-            print('space {}'.format(data))
           elif (packet == 1):
             # パルス
-            print('pulse {}'.format(data))
             if len(code) % 2 == 0:
               code.append(data)
           elif (packet == 3):
