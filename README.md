@@ -6,12 +6,13 @@ Raspberry Piで赤外線送受信、データ解析をするPythonパッケー�
 
 他のソフトウェアやセンサーと組み合わせることで、スマホから家電を操作するシステムや、室温が一定以上になったらエアコンを自動で入れる熱中症防止システムなどの応用も可能になります。
 
-## 以前のバージョンからの変更点
-以前はモジュールcgir.pyとツールcgirtool.pyを単体で配布していましたが、手動でモジュールを配置したりパスを通する必要がありました。
+## Raspberry Pi OS TrixieおよびRaspberry Pi5対応
 
-そこで、pipを使ってインストールできるようにパッケージ化しました。これによりインストールが簡単になったほか、`cgir`コマンドや`import cgir`によりパスを気にすることなく利用できるようになりました。
+cgirバージョン1.4までは赤外線制御にpigpioを使用していました。しかし、Raspberry Pi5ではpigpioが動作しないほか、
+2025年10月リリースのRaspberry Pi OS Trixieではpigpio自体がOSに同梱されなくなっていました。
 
-パッケージ化に伴いファイルの構成が変わっていますが、使用方法は変わりません。以前のバージョンはv2020_903タグを参照して下さい。
+そこで、cgirバージョン2.0でLIRCを使った赤外線制御に刷新しました。
+これにより、Raspberry Pi OSが動作するRaspberry Piシリーズ(Raspberry Pi5を含む)において動作可能となりました。
 
 ## 動作環境
 Raspberry Pi OSの動作しているRaspberry Piと、赤外線送受信機能のある以下の拡張基板の組み合わせを想定しています。GPIO番号を変更することで他の拡張基板、HAT、自作回路でも利用可能です。
@@ -22,21 +23,6 @@ Raspberry Pi OSの動作しているRaspberry Piと、赤外線送受信機能�
 
 - Raspberry Pi用 温度/湿度/気圧/赤外線 ホームIoT拡張ボード「[RPi TPH Monitor](https://www.indoorcorgielec.com/products/rpi-tph-monitor-rev2/)」
 
-### 動作確認済Raspberry Pi
-- Raspberry Pi 4 Model B
-- Raspberry Pi 3 Model B/B+
-- Raspberry Pi Zero 2W
-- Raspberry Pi Zero W/WH
-- Raspberry Pi Zero
-
-### Raspberry Pi 5について
-Raspberry Pi 5では信号制御に利用しているpigpioが動作しないため、本ソフトも動作しません。
-対応は検討中です。
-
-### 必要なソフトウェア
-- Raspberry Pi OS
-- Python3
-- pigpioサービス
 
 ## インストール
 以下のコマンドでインストール/アップグレードできます。
@@ -44,14 +30,18 @@ Raspberry Pi 5では信号制御に利用しているpigpioが動作しないた
 `sudo python3 -m pip install -U cgir --break-system-packages`
 
 ## 前準備
-本ソフトウェアはpigpioサービスを利用します。
-サービスを開始するには以下のコマンドを実行します。
+本ソフトウェアはLIRCを利用します。
+/boot/firmware/config.txtをスーパーユーザーで開き, 以下の行を追記して再起動します。
+1行目で指定している4が受信用のGPIO番号、2行目の13が送信用のGPIO番号です。
+Indoor Corgi製以外の拡張基板、自作回路の場合は使用しているGPIO番号に変更してください。
 
-`sudo systemctl start pigpiod`
+```
+dtoverlay=gpio-ir,gpio_pin=4
+dtoverlay=gpio-ir-tx,gpio_pin=13
+```
 
-Raspberry Pi起動時に自動的にpigpioを開始するには、以下のコマンドを実行します。
-
-`sudo systemctl enable pigpiod`
+再起動後、/dev/lirc0および/dev/lirc1があれば設定できています。
+通常lirc0が送信用、lirc1が受信用になります。
 
 ## 使い方
 
@@ -61,24 +51,26 @@ Raspberry Pi起動時に自動的にpigpioを開始するには、以下のコ�
 コマンドラインツールの使い方は`cgir -h`もしくは[解説記事](https://www.indoorcorgielec.com/resources/raspberry-pi/python-pigpio-infrared)を参照して下さい。
 
 ### Pythonパッケージ
-python3のスクリプトからは`import cgir`とすることでパッケージの機能を利用できます。使い方の詳細はソースコードを参照して下さい。
+pythonスクリプトからは`import cgir`とすることでパッケージの機能を利用できます。使い方の詳細はソースコードを参照して下さい。
 
-### 送信しても機器が反応しない場合
-一部環境で、pigpioのクロックソースがPCMの場合、意図した周波数にならず送信に失敗(機器が反応しない)する現象を確認しています。その場合は以下をお試しください。
+## バージョン1から2へ更新する場合
+GPIO番号を変更せずにデフォルトで使用している場合、基本的に変更せずに問題なく動作するはずです。
 
-スーパーユーザーで /lib/systemd/system/pigpiod.service ファイルを開き、ExecStart行の最後に「-t 0」を追加します。編集後にRasbperry Piを再起動します。
+### コマンドラインツールとして利用している場合
 
-`ExecStart=/usr/bin/pigpio -l -t 0`
+GPIO番号はconfig.txtで指定するためcgirコマンドのGPIO指定用-gオプションがなくなりました。
+-gオプションを使用していた場合は削除してください。
 
-pigpioを自動起動にしている場合、起動タイミングを遅らせると解決する場合があります。スーパーユーザーで /lib/systemd/system/pigpiod.service ファイルを開き、2行目のDescription行の次の行に「After=multi-user.target」を追加します。編集後にRasbperry Piを再起動します。
 
-```
-[Unit]
-Description=Daemon required to control GPIO pins via pigpio
-After=multi-user.target
-[Service]
-... (これ以降変更なし)
-```
+### Pythonパッケージとして利用している場合
+
+GPIO番号はconfig.txtで指定するためcgir.InfraredクラスGPIO指定用パラメーターgpio_sendおよびgpio_recがなくなりました。
+これらを使用していた場合は削除してください。
+
+Infraredクラスのsendメソッドが失敗した場合False, recメソッドがpigpio操作に失敗した場合は(cgir.REC_ERR_PIGPIO, [])が戻り値になっていましたが、
+バージョン2ではLIRC操作に失敗して送受信できなかった場合は例外を発生させるようになりました。
+バージョン1用のプログラムで動作しますが、例外を処理したい場合はtry/exceptの追加などを行ってください。
+sendメソッドが成功した場合、recメソッドで赤外線受信した場合とタイムアウトした場合の戻り値に変更はありません。
 
 ## 注意事項
 赤外線送受信はメーカーや機器によって仕様が異なります。全ての機器での動作を保証するものではありません。
