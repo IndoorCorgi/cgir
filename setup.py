@@ -9,7 +9,7 @@ setup(
     url='https://github.com/IndoorCorgi/cgir',
     license='Apache License 2.0',
     packages=['cgir'],
-    install_requires=['docopt', 'pigpio'],
+    install_requires=['docopt'],
     entry_points={'console_scripts': ['cgir=cgir:cli',]},
     python_requires='>=3.6',
 )
