@@ -51,7 +51,7 @@ dtoverlay=gpio-ir-tx,gpio_pin=13
 コマンドラインツールの使い方は`cgir -h`もしくは[解説記事](https://www.indoorcorgielec.com/resources/raspberry-pi/python-pigpio-infrared)を参照して下さい。
 
 ### Pythonパッケージ
-pythonスクリプトからは`import cgir`とすることでパッケージの機能を利用できます。使い方の詳細はソースコードを参照して下さい。
+pythonスクリプトからは`import cgir`とすることでパッケージの機能を利用できます。使い方の例は[examples](examples)を参照して下さい。
 
 ## バージョン1から2へ更新する場合
 GPIO番号を変更せずにデフォルトで使用している場合、上記のconfig.txtの編集を行えば、
